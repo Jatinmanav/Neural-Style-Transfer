@@ -25,7 +25,6 @@ contentImage = readImage(content_path)
 
 inputData = tf.keras.applications.vgg19.preprocess_input(contentImage)
 inputData = tf.image.resize(inputData, [224, 224])
-vggModel = tf.keras.applications.VGG19()
-pred = vggModel(inputData)
-result = tf.keras.applications.vgg19.decode_predictions(pred.numpy())[0]
-print([(item, probability) for (_, item, probability) in result][0])
+vggModel = tf.keras.applications.VGG19(include_top=False)
+for layer in vggModel.layers:
+    print(layer.name)
