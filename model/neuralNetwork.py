@@ -28,3 +28,22 @@ inputData = tf.image.resize(inputData, [224, 224])
 vggModel = tf.keras.applications.VGG19(include_top=False)
 for layer in vggModel.layers:
     print(layer.name)
+
+style_layers = ['block1_conv1', 'block2_conv1',
+                'block3_conv1', 'block4_conv1', 'block5_conv1']
+content_layers = ['block4_conv2']
+
+
+def vggLayers(layer_names):
+    vggModel = tf.keras.applications.VGG19(include_top=False)
+    vggModel.trainable = False
+    outputs = [vggModel.get_layer(name).output for name in layer_names]
+    model = tf.keras.Model([vggModel.input], outputs)
+    return model
+
+
+def gram_matrix(input_tensor):
+    result = tf.matmul(input_tensor, tf.transpose(input_tensor))
+    num = input_tensor.shape[1] * input_tensor.shape[2]
+    result = result/num
+    return result
