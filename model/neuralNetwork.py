@@ -23,11 +23,6 @@ def readImage(image_path):
 styleImage = readImage(style_path)
 contentImage = readImage(content_path)
 
-inputData = tf.keras.applications.vgg19.preprocess_input(contentImage)
-inputData = tf.image.resize(inputData, [224, 224])
-vggModel = tf.keras.applications.VGG19(include_top=False)
-for layer in vggModel.layers:
-    print(layer.name)
 
 style_layers = ['block1_conv1', 'block2_conv1',
                 'block3_conv1', 'block4_conv1', 'block5_conv1']
@@ -43,7 +38,44 @@ def vggLayers(layer_names):
 
 
 def gram_matrix(input_tensor):
-    result = tf.matmul(input_tensor, tf.transpose(input_tensor))
+    result = tf.matmul(input_tensor, input_tensor, transpose_b=True)
+    result = tf.linalg.einsum('bijc,bijd->bcd', input_tensor, input_tensor)
     num = input_tensor.shape[1] * input_tensor.shape[2]
     result = result/num
     return result
+
+
+class StyleContentModel(tf.keras.models.Model):
+    def __init__(self, style_layers, content_layers):
+        super(StyleContentModel, self).__init__()
+        self.vgg = vggLayers(style_layers + content_layers)
+        self.vgg.trainable = False
+        self.style_layers = style_layers
+        self.content_layers = content_layers
+
+    def call(self, inputs):
+        inputs = inputs * 255
+        inputs = tf.keras.applications.vgg19.preprocess_input(inputs)
+        outputs = self.vgg(inputs)
+        style_outputs, content_outputs = (
+            outputs[:len(self.style_layers)], outputs[len(self.style_layers):])
+        style_outputs = [gram_matrix(style_output)
+                         for style_output in style_outputs]
+        content_dict = {layer_name: value for layer_name,
+                        value in zip(self.content_layers, content_outputs)}
+        style_dict = {layer_name: value for layer_name,
+                      value in zip(self.style_layers, style_outputs)}
+        return {"content": content_dict, "style": style_dict}
+
+
+extractor = StyleContentModel(style_layers, content_layers)
+content_values = extractor(contentImage)['content']
+style_values = extractor(styleImage)['style']
+
+for name, output in style_values.items():
+    print(name)
+    print(output.shape)
+
+for name, output in content_values.items():
+    print(name)
+    print(output.shape)
