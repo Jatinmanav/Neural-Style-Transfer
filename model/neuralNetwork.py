@@ -113,8 +113,20 @@ def train_step(image):
     image.assign(tf.clip_by_value(image, 0.0, 1.0))
 
 
-train_step(image)
-train_step(image)
-train_step(image)
+start = time.time()
+
+epochs = 10
+steps_per_epoch = 100
+
+step = 0
+for n in range(epochs):
+    for m in range(steps_per_epoch):
+        step += 1
+        train_step(image)
+    print("Train step: {}".format(step))
+
+end = time.time()
+print("Total time: {:.1f}".format(end-start))
+
 image = tensor_to_image(image)
 image.save('result.jpg')
