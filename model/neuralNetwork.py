@@ -1,32 +1,45 @@
 import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
+import PIL.Image
+import time
 
 style_path = tf.keras.utils.get_file(
     "styleImage1.jpg", "https://wallpaperaccess.com/full/320455.jpg")
 content_path = tf.keras.utils.get_file(
-    "contentImage1.jpg", "https://fullhdwall.com/wp-content/uploads/2016/07/Free-Mountains-Landscape.jpg")
+    "contentImage1.jpg", "https://images.wallpaperscraft.com/image/mountains_fog_dawn_153238_1920x1200.jpg")
 
 
-def readImage(image_path):
+def loadImage(image_path):
     maxSize = 480
-    img = tf.io.read_file(style_path)
+    img = tf.io.read_file(image_path)
     img = tf.io.decode_image(img)
     img = tf.image.convert_image_dtype(img, tf.float32)
     ratio = maxSize/img.shape[0]
     img = tf.image.resize(
-        img, [int(img.shape[0]*ratio), int(img.shape[1]*ratio)])
+        img, (int(img.shape[0]*ratio), int(img.shape[1]*ratio)))
     img = img[tf.newaxis, :]
     return img
 
 
-styleImage = readImage(style_path)
-contentImage = readImage(content_path)
+styleImage = loadImage(style_path)
+contentImage = loadImage(content_path)
 
 
 style_layers = ['block1_conv1', 'block2_conv1',
                 'block3_conv1', 'block4_conv1', 'block5_conv1']
-content_layers = ['block4_conv2']
+content_layers = ['block5_conv2']
+num_style_layers = len(style_layers)
+num_content_layers = len(content_layers)
+
+
+def tensor_to_image(image):
+    image = image*255
+    image = np.array(image, dtype=np.uint8)
+    if np.ndim(image) > 3:
+        assert image.shape[0] == 1
+        image = image[0]
+    return PIL.Image.fromarray(image)
 
 
 def vggLayers(layer_names):
@@ -38,8 +51,7 @@ def vggLayers(layer_names):
 
 
 def gram_matrix(input_tensor):
-    result = tf.matmul(input_tensor, input_tensor, transpose_b=True)
-    result = tf.linalg.einsum('bijc,bijd->bcd', input_tensor, input_tensor)
+    result = tf.linalg.einsum("bijc, bijd -> bcd", input_tensor, input_tensor)
     num = input_tensor.shape[1] * input_tensor.shape[2]
     result = result/num
     return result
@@ -54,7 +66,7 @@ class StyleContentModel(tf.keras.models.Model):
         self.content_layers = content_layers
 
     def call(self, inputs):
-        inputs = inputs * 255
+        inputs = inputs * 255.0
         inputs = tf.keras.applications.vgg19.preprocess_input(inputs)
         outputs = self.vgg(inputs)
         style_outputs, content_outputs = (
@@ -69,13 +81,40 @@ class StyleContentModel(tf.keras.models.Model):
 
 
 extractor = StyleContentModel(style_layers, content_layers)
+results = extractor(contentImage)
 content_values = extractor(contentImage)['content']
 style_values = extractor(styleImage)['style']
 
-for name, output in style_values.items():
-    print(name)
-    print(output.shape)
+image = tf.Variable(contentImage)
+opt = tf.optimizers.Adam(learning_rate=0.02, beta_1=0.99, epsilon=1e-1)
 
-for name, output in content_values.items():
-    print(name)
-    print(output.shape)
+
+def style_content_loss(outputs, style_weight=1e-2, content_weight=1e4):
+    style_outputs = outputs['style']
+    content_outputs = outputs['content']
+    style_loss = tf.add_n([tf.reduce_mean(
+        (style_outputs[name] - style_values[name])**2) for name in style_outputs.keys()])
+    style_loss *= style_weight/num_style_layers
+    content_loss = tf.add_n([tf.reduce_mean(
+        (content_outputs[name] - content_values[name])**2) for name in content_outputs.keys()])
+    content_loss *= style_weight/num_content_layers
+    style_content_loss = style_loss + content_loss
+    return style_content_loss
+
+
+@ tf.function()
+def train_step(image):
+    with tf.GradientTape() as tape:
+        outputs = extractor(image)
+        loss = style_content_loss(outputs)
+
+    grad = tape.gradient(loss, image)
+    opt.apply_gradients([(grad, image)])
+    image.assign(tf.clip_by_value(image, 0.0, 1.0))
+
+
+train_step(image)
+train_step(image)
+train_step(image)
+image = tensor_to_image(image)
+image.save('result.jpg')
