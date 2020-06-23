@@ -11,11 +11,12 @@ content_path = tf.keras.utils.get_file(
 
 
 def loadImage(image_path):
-    maxSize = 480
+    maxSize = 512
     img = tf.io.read_file(image_path)
     img = tf.io.decode_image(img)
     img = tf.image.convert_image_dtype(img, tf.float32)
-    ratio = maxSize/img.shape[0]
+    image_max_dim = max(img.shape[0], img.shape[1])
+    ratio = maxSize/image_max_dim
     img = tf.image.resize(
         img, (int(img.shape[0]*ratio), int(img.shape[1]*ratio)))
     img = img[tf.newaxis, :]
